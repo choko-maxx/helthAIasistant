@@ -1,0 +1,1829 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HealthPulse AI - パーソナル健康診断＆ライフログ管理</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & Noto Sans JP -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- PDF.js (for PDF parsing) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans JP', sans-serif;
+            background-color: #f8fafc;
+            color: #1e293b;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        .grade-badge-A { background-color: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+        .grade-badge-B { background-color: #e0f2fe; color: #075985; border: 1px solid #bae6fd; }
+        .grade-badge-C { background-color: #fef9c3; color: #854d0e; border: 1px solid #fef08a; }
+        .grade-badge-D { background-color: #ffedd5; color: #9a3412; border: 1px solid #fed7aa; }
+        .grade-badge-E { background-color: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+        
+        .fade-in {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none"></div>
+
+    <!-- Header Navigation -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <!-- Logo -->
+                <div class="flex items-center gap-3">
+                    <div class="bg-teal-600 text-white p-2 rounded-xl shadow-sm">
+                        <i class="fa-solid fa-heart-pulse text-xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="font-bold text-lg sm:text-xl text-slate-800 tracking-tight">HealthPulse <span class="text-teal-600">AI</span></h1>
+                        <p class="text-[11px] text-slate-500 hidden sm:block">健康診断推移・受診リマインド・AI健康相談</p>
+                    </div>
+                </div>
+
+                <!-- Profile Selector & Reminder Alert -->
+                <div class="flex items-center gap-3">
+                    <!-- Reminder Bell -->
+                    <button onclick="switchTab('calendar')" class="relative p-2 text-slate-600 hover:bg-slate-100 rounded-full transition" title="受診リマインダー">
+                        <i class="fa-regular fa-bell text-lg"></i>
+                        <span id="reminder-badge" class="hidden absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-white"></span>
+                    </button>
+
+                    <!-- User Selector -->
+                    <div class="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
+                        <i class="fa-solid fa-user-circle text-teal-600"></i>
+                        <select id="user-select" onchange="switchUser(this.value)" class="bg-transparent text-sm font-medium text-slate-700 focus:outline-none cursor-pointer">
+                            <!-- Populated by JS -->
+                        </select>
+                        <button onclick="openAddUserModal()" class="text-slate-500 hover:text-teal-600 ml-1 p-1" title="新規個人登録">
+                            <i class="fa-solid fa-plus text-xs"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Navigation Tabs -->
+            <nav class="flex space-x-1 sm:space-x-4 overflow-x-auto pb-px -mb-px no-scrollbar">
+                <button onclick="switchTab('dashboard')" id="tab-dashboard" class="nav-tab border-b-2 border-teal-600 text-teal-600 py-3 px-3 text-sm font-medium whitespace-nowrap flex items-center gap-2">
+                    <i class="fa-solid fa-chart-line"></i> 診断結果・推移
+                </button>
+                <button onclick="switchTab('upload')" id="tab-upload" class="nav-tab border-b-2 border-transparent text-slate-500 hover:text-slate-700 py-3 px-3 text-sm font-medium whitespace-nowrap flex items-center gap-2">
+                    <i class="fa-solid fa-file-pdf"></i> PDF読込・登録
+                </button>
+                <button onclick="switchTab('calendar')" id="tab-calendar" class="nav-tab border-b-2 border-transparent text-slate-500 hover:text-slate-700 py-3 px-3 text-sm font-medium whitespace-nowrap flex items-center gap-2">
+                    <i class="fa-regular fa-calendar-check"></i> 受診予定・リマインド
+                </button>
+                <button onclick="switchTab('daily')" id="tab-daily" class="nav-tab border-b-2 border-transparent text-slate-500 hover:text-slate-700 py-3 px-3 text-sm font-medium whitespace-nowrap flex items-center gap-2">
+                    <i class="fa-solid fa-notes-medical"></i> 日々の健康記録
+                </button>
+                <button onclick="switchTab('ai-chat')" id="tab-ai-chat" class="nav-tab border-b-2 border-transparent text-slate-500 hover:text-slate-700 py-3 px-3 text-sm font-medium whitespace-nowrap flex items-center gap-2">
+                    <i class="fa-solid fa-robot text-teal-500"></i> AI健康相談
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Reminder Banner (Shows if upcoming appointment exists) -->
+    <div id="upcoming-banner" class="hidden bg-amber-50 border-b border-amber-200 px-4 py-2.5">
+        <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2 text-sm text-amber-800">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-triangle-exclamation text-amber-600"></i>
+                <span id="upcoming-banner-text" class="font-medium"></span>
+            </div>
+            <button onclick="switchTab('calendar')" class="text-xs font-semibold bg-amber-200/70 hover:bg-amber-200 text-amber-900 px-3 py-1 rounded-lg transition">
+                予定を確認する
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+        <!-- ==========================================
+             TAB 1: DASHBOARD (診断結果・推移)
+             ========================================== -->
+        <section id="view-dashboard" class="tab-view fade-in space-y-6">
+            <!-- Top Summary Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- Overall Grade Card -->
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">最新総合判定</p>
+                        <div class="flex items-baseline gap-2 mt-1">
+                            <span id="dash-overall-grade" class="text-3xl font-bold text-slate-800">-</span>
+                            <span id="dash-latest-date" class="text-xs text-slate-500">受診日: -</span>
+                        </div>
+                        <p id="dash-overall-desc" class="text-xs text-slate-600 mt-2">データを読み込んでください</p>
+                    </div>
+                    <div id="dash-grade-icon" class="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center text-2xl font-bold text-slate-400">
+                        -
+                    </div>
+                </div>
+
+                <!-- Alert Items Card -->
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">要再検査・精密検査 (D・E判定)</p>
+                        <div class="flex items-baseline gap-2 mt-1">
+                            <span id="dash-alert-count" class="text-3xl font-bold text-red-600">0</span>
+                            <span class="text-sm text-slate-600">項目</span>
+                        </div>
+                        <p id="dash-alert-names" class="text-xs text-red-600 font-medium mt-2 truncate max-w-[200px]">該当項目なし</p>
+                    </div>
+                    <div class="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center text-red-500 text-xl">
+                        <i class="fa-solid fa-stethoscope"></i>
+                    </div>
+                </div>
+
+                <!-- Next Appointment Card -->
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">次回の受診予定</p>
+                        <div class="mt-1">
+                            <span id="dash-next-appt-date" class="text-lg font-bold text-slate-800">予定なし</span>
+                        </div>
+                        <p id="dash-next-appt-title" class="text-xs text-teal-600 font-medium mt-2 truncate max-w-[200px]">カレンダーから予約登録できます</p>
+                    </div>
+                    <button onclick="switchTab('calendar')" class="w-12 h-12 rounded-2xl bg-teal-50 hover:bg-teal-100 text-teal-600 flex items-center justify-center transition" title="予定を追加">
+                        <i class="fa-solid fa-calendar-plus text-lg"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Alert Items Highlight Box (Visible only when D or E items exist) -->
+            <div id="alert-highlight-section" class="hidden bg-red-50/80 border border-red-200 rounded-2xl p-5">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-red-100 text-red-600 p-2.5 rounded-xl">
+                            <i class="fa-solid fa-circle-exclamation text-lg"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-red-900">優先対応が必要な検査項目（D・E判定）</h3>
+                            <p class="text-xs text-red-700">基準値（ボーダーライン）を大きく外れています。早めの医療機関受診をおすすめします。</p>
+                        </div>
+                    </div>
+                    <button onclick="switchTab('calendar')" class="bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-sm transition whitespace-nowrap self-start sm:self-auto">
+                        <i class="fa-regular fa-calendar-plus mr-1"></i> 受診予定をカレンダー登録
+                    </button>
+                </div>
+                <div id="alert-items-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+
+            <!-- Detailed Table with Borderlines & Current Values -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                        <h2 class="font-bold text-slate-800 text-base">検査項目別 結果・ボーダーライン比較表</h2>
+                        <p class="text-xs text-slate-500 mt-0.5">基準値（ボーダーライン）と現在の数値を視覚的に比較できます</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <select id="filter-grade" onchange="renderDashboard()" class="text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-700 focus:outline-none">
+                            <option value="ALL">すべての判定 (A〜E)</option>
+                            <option value="ALERT">要再検査・精密検査のみ (D・E)</option>
+                            <option value="CAUTION">要経過観察以上 (C・D・E)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-50 text-slate-500 text-xs uppercase border-b border-slate-200">
+                                <th class="py-3.5 px-4 font-semibold">検査項目</th>
+                                <th class="py-3.5 px-4 font-semibold text-center">判定</th>
+                                <th class="py-3.5 px-4 font-semibold">現在値</th>
+                                <th class="py-3.5 px-4 font-semibold">基準値 (ボーダーライン)</th>
+                                <th class="py-3.5 px-4 font-semibold w-48 hidden md:table-cell">視覚化ゲージ</th>
+                                <th class="py-3.5 px-4 font-semibold text-right">前回比</th>
+                            </tr>
+                        </thead>
+                        <tbody id="results-table-body" class="divide-y divide-slate-100 text-sm">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Historical Trend Chart -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <div>
+                        <h2 class="font-bold text-slate-800 text-base">健康診断データの経年推移</h2>
+                        <p class="text-xs text-slate-500">項目を選択して過去の数値変化とボーダーラインを確認</p>
+                    </div>
+                    <select id="trend-item-select" onchange="renderTrendChart()" class="text-sm bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500">
+                        <!-- Populated dynamically -->
+                    </select>
+                </div>
+                <div class="relative h-72 w-full">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- ==========================================
+             TAB 2: PDF UPLOAD & PARSE (PDF読込・登録)
+             ========================================== -->
+        <section id="view-upload" class="tab-view hidden fade-in space-y-6">
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h2 class="font-bold text-lg text-slate-800 mb-1">健康診断結果のPDF読込・新規登録</h2>
+                <p class="text-sm text-slate-500 mb-6">健康診断結果のPDFファイルをアップロードすると、AIが数値を自動抽出しA〜E判定を行います。</p>
+
+                <!-- Dropzone -->
+                <div id="pdf-dropzone" class="border-2 border-dashed border-slate-300 hover:border-teal-500 bg-slate-50/50 rounded-2xl p-8 text-center transition cursor-pointer" onclick="document.getElementById('pdf-file-input').click()">
+                    <input type="file" id="pdf-file-input" accept="application/pdf" class="hidden" onchange="handlePdfUpload(event)">
+                    <div class="w-16 h-16 bg-teal-100 text-teal-600 rounded-2xl flex items-center justify-center mx-auto mb-4 text-2xl">
+                        <i class="fa-solid fa-file-arrow-up"></i>
+                    </div>
+                    <h3 class="font-semibold text-slate-800 mb-1">PDFファイルをドロップ、またはクリックして選択</h3>
+                    <p class="text-xs text-slate-500 mb-4">対応形式: PDF (.pdf) ※テキスト抽出およびAI自動解析に対応</p>
+                    <button type="button" class="bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium px-5 py-2.5 rounded-xl shadow-sm transition">
+                        ファイルを選択する
+                    </button>
+                </div>
+
+                <!-- Sample Demo Loader (For easy testing without a real PDF) -->
+                <div class="mt-4 flex flex-wrap items-center justify-between gap-2 bg-slate-100 p-3.5 rounded-xl">
+                    <div class="flex items-center gap-2 text-xs text-slate-600">
+                        <i class="fa-solid fa-circle-info text-teal-600"></i>
+                        <span>手元に健康診断PDFがない場合は、サンプルデータ読込をお試しいただけます。</span>
+                    </div>
+                    <button onclick="simulateSamplePdfLoad()" class="text-xs font-semibold bg-white hover:bg-slate-50 text-teal-700 border border-slate-200 px-3 py-1.5 rounded-lg shadow-sm transition">
+                        <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> 最新サンプルPDFを自動解析テスト
+                    </button>
+                </div>
+
+                <!-- Loading Spinner -->
+                <div id="pdf-loading" class="hidden py-8 text-center">
+                    <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-teal-600 border-t-transparent mb-2"></div>
+                    <p class="text-sm font-medium text-slate-700">PDFから検査数値を抽出・AI判定中...</p>
+                </div>
+
+                <!-- Extracted Preview & Edit Form -->
+                <div id="pdf-preview-form" class="hidden mt-6 pt-6 border-t border-slate-200 space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fa-solid fa-check-circle text-teal-600"></i> 抽出データの確認・修正
+                        </h3>
+                        <div class="flex items-center gap-2">
+                            <label class="text-xs font-medium text-slate-600">受診日:</label>
+                            <input type="date" id="upload-exam-date" class="text-sm border border-slate-300 rounded-xl px-3 py-1.5 focus:outline-none focus:border-teal-500">
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto border border-slate-200 rounded-xl">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-slate-50 text-xs text-slate-500 uppercase border-b border-slate-200">
+                                <tr>
+                                    <th class="py-2.5 px-3">項目名</th>
+                                    <th class="py-2.5 px-3">数値</th>
+                                    <th class="py-2.5 px-3">単位</th>
+                                    <th class="py-2.5 px-3">基準値 (下限〜上限)</th>
+                                    <th class="py-2.5 px-3">判定 (A〜E)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="upload-preview-tbody" class="divide-y divide-slate-100">
+                                <!-- Populated dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="flex justify-end gap-3 pt-2">
+                        <button onclick="cancelPdfPreview()" class="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-xl transition">キャンセル</button>
+                        <button onclick="saveExtractedRecord()" class="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-6 py-2.5 rounded-xl shadow-sm transition">
+                            <i class="fa-solid fa-save mr-1"></i> この内容で個人データに登録する
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- ==========================================
+             TAB 3: CALENDAR & REMINDERS (受診予定・リマインド)
+             ========================================== -->
+        <section id="view-calendar" class="tab-view hidden fade-in space-y-6">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Left: Add Appointment Form -->
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 h-fit space-y-4">
+                    <h2 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                        <i class="fa-regular fa-calendar-plus text-teal-600"></i> 再検査・受診予定の登録
+                    </h2>
+                    <p class="text-xs text-slate-500">D・E判定の項目や定期通院の予定を登録すると、予定日が近づいた際にアプリ内でリマインドします。</p>
+
+                    <form onsubmit="addAppointment(event)" class="space-y-3">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-700 mb-1">対象の検査項目・診療科</label>
+                            <input type="text" id="appt-title" required placeholder="例: LDLコレステロール再検査 (内科)" class="w-full text-sm border border-slate-300 rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-700 mb-1">受診予定日</label>
+                            <input type="date" id="appt-date" required class="w-full text-sm border border-slate-300 rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-700 mb-1">病院名・メモ</label>
+                            <textarea id="appt-memo" rows="2" placeholder="例: 〇〇クリニック 午前9時予約、紹介状持参" class="w-full text-sm border border-slate-300 rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500"></textarea>
+                        </div>
+                        <button type="submit" class="w-full bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold py-2.5 rounded-xl shadow-sm transition">
+                            カレンダーに予定を追加
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Right: Interactive Calendar & Upcoming List -->
+                <div class="lg:col-span-2 space-y-6">
+                    <!-- Calendar View -->
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 id="calendar-month-year" class="font-bold text-slate-800 text-lg">2026年 11月</h3>
+                            <div class="flex gap-1">
+                                <button onclick="changeMonth(-1)" class="p-2 hover:bg-slate-100 rounded-xl text-slate-600"><i class="fa-solid fa-chevron-left"></i></button>
+                                <button onclick="resetToToday()" class="px-3 py-1 text-xs font-medium hover:bg-slate-100 rounded-xl text-slate-600">今月</button>
+                                <button onclick="changeMonth(1)" class="p-2 hover:bg-slate-100 rounded-xl text-slate-600"><i class="fa-solid fa-chevron-right"></i></button>
+                            </div>
+                        </div>
+
+                        <!-- Days Header -->
+                        <div class="grid grid-cols-7 text-center text-xs font-semibold text-slate-400 pb-2 border-b border-slate-100">
+                            <div class="text-red-400">日</div>
+                            <div>月</div>
+                            <div>火</div>
+                            <div>水</div>
+                            <div>木</div>
+                            <div>金</div>
+                            <div class="text-blue-400">土</div>
+                        </div>
+
+                        <!-- Calendar Grid -->
+                        <div id="calendar-grid" class="grid grid-cols-7 gap-1 pt-2">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <!-- Appointment List -->
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                        <h3 class="font-bold text-slate-800 text-base mb-3">登録済みの受診予定・リマインダー一覧</h3>
+                        <div id="appointment-list" class="space-y-2.5">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- ==========================================
+             TAB 4: DAILY HEALTH LOG (日々の健康記録)
+             ========================================== -->
+        <section id="view-daily" class="tab-view hidden fade-in space-y-6">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <!-- Left: Input Form (7 cols) -->
+                <div class="lg:col-span-7 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-5">
+                    <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <h2 class="font-bold text-slate-800 text-lg flex items-center gap-2">
+                            <i class="fa-solid fa-pen-to-square text-teal-600"></i> 今日の健康ライフログ記録
+                        </h2>
+                        <input type="date" id="daily-date" class="text-sm border border-slate-200 rounded-xl px-3 py-1.5 text-slate-700 font-medium">
+                    </div>
+
+                    <form onsubmit="saveDailyLog(event)" class="space-y-5">
+                        <!-- Physical & Mental Condition -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                                <label class="block text-xs font-bold text-slate-700 mb-2">身体の調子 (1〜5段階)</label>
+                                <div class="flex justify-between gap-1" id="physical-rating-group">
+                                    <button type="button" onclick="selectRating('physical', 1)" data-val="1" class="rating-btn flex-1 py-2 rounded-lg text-lg bg-white border border-slate-200 hover:bg-teal-50 transition">😫</button>
+                                    <button type="button" onclick="selectRating('physical', 2)" data-val="2" class="rating-btn flex-1 py-2 rounded-lg text-lg bg-white border border-slate-200 hover:bg-teal-50 transition">😕</button>
+                                    <button type="button" onclick="selectRating('physical', 3)" data-val="3" class="rating-btn flex-1 py-2 rounded-lg text-lg bg-teal-100 border-teal-500 ring-1 ring-teal-500 transition">😐</button>
+                                    <button type="button" onclick="selectRating('physical', 4)" data-val="4" class="rating-btn flex-1 py-2 rounded-lg text-lg bg-white border border-slate-200 hover:bg-teal-50 transition">🙂</button>
+                                    <button type="button" onclick="selectRating('physical', 5)" data-val="5" class="rating-btn flex-1 py-2 rounded-lg text-lg bg-white border border-slate-200 hover:bg-teal-50 transition">😄</button>
+                                </div>
+                                <input type="hidden" id="daily-physical" value="3">
+                            </div>
+
+                            <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+                                <label class="block text-xs font-bold text-slate-700 mb-2">精神・メンタルの状態 (1〜5段階)</label>
+                                <div class="flex justify-between gap-1" id="mental-rating-group">
+                                    <button type="button" onclick="selectRating('mental', 1)" data-val="1" class="rating-btn flex-1 py-2 rounded-lg text-lg bg-white border border-slate-200 hover:bg-teal-50 transition">⛈️</button>
+                                    <button type="button" onclick="selectRating('mental', 2)" data-val="2" class="rating-btn flex-1 py-2 rounded-lg text-lg bg-white border border-slate-200 hover:bg-teal-50 transition">🌧️</button>
+                                    <button type="button" onclick="selectRating('mental', 3)" data-val="3" class="rating-btn flex-1 py-2 rounded-lg text-lg bg-teal-100 border-teal-500 ring-1 ring-teal-500 transition">☁️</button>
+                                    <button type="button" onclick="selectRating('mental', 4)" data-val="4" class="rating-btn flex-1 py-2 rounded-lg text-lg bg-white border border-slate-200 hover:bg-teal-50 transition">⛅</button>
+                                    <button type="button" onclick="selectRating('mental', 5)" data-val="5" class="rating-btn flex-1 py-2 rounded-lg text-lg bg-white border border-slate-200 hover:bg-teal-50 transition">☀️</button>
+                                </div>
+                                <input type="hidden" id="daily-mental" value="3">
+                            </div>
+                        </div>
+
+                        <!-- Sleep Hours -->
+                        <div>
+                            <div class="flex justify-between items-center mb-1">
+                                <label class="text-xs font-bold text-slate-700"><i class="fa-solid fa-bed text-indigo-500 mr-1"></i> 睡眠時間</label>
+                                <span id="sleep-display" class="text-sm font-bold text-indigo-600">7.0 時間</span>
+                            </div>
+                            <input type="range" id="daily-sleep" min="0" max="14" step="0.5" value="7.0" oninput="document.getElementById('sleep-display').textContent = parseFloat(this.value).toFixed(1) + ' 時間'" class="w-full accent-indigo-600 cursor-pointer">
+                        </div>
+
+                        <!-- Meals & Calories -->
+                        <div class="space-y-3 bg-orange-50/40 p-4 rounded-xl border border-orange-100">
+                            <div class="flex items-center justify-between">
+                                <label class="block text-xs font-bold text-slate-700"><i class="fa-solid fa-utensils text-orange-500 mr-1"></i> 食事記録（写真AIカロリー自動計算・自由入力）</label>
+                                <span class="text-[10px] font-medium text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full">写真から自動計算対応</span>
+                            </div>
+
+                            <!-- Photo Upload & Preview Area -->
+                            <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                                <input type="file" id="daily-meal-photo" accept="image/*" class="hidden" onchange="handleMealPhotoUpload(event)">
+                                <button type="button" onclick="document.getElementById('daily-meal-photo').click()" class="flex items-center gap-2 bg-white hover:bg-orange-50 text-slate-700 border border-slate-300 border-dashed rounded-xl px-4 py-2.5 text-xs font-semibold transition shadow-2xs">
+                                    <i class="fa-solid fa-camera text-orange-500 text-sm"></i>
+                                    <span>食事の写真を選択してカロリー自動計算</span>
+                                </button>
+                                <div id="meal-photo-analyzing" class="hidden flex items-center gap-2 text-xs font-medium text-orange-600">
+                                    <i class="fa-solid fa-circle-notch fa-spin"></i>
+                                    <span>AIが写真から料理とカロリーを解析中...</span>
+                                </div>
+                            </div>
+
+                            <!-- Photo Preview Box -->
+                            <div id="meal-photo-preview-box" class="hidden relative w-fit">
+                                <img id="meal-photo-preview" src="" alt="食事写真プレビュー" class="h-28 w-auto object-cover rounded-xl border border-slate-200 shadow-xs">
+                                <button type="button" onclick="removeMealPhoto()" class="absolute -top-2 -right-2 bg-slate-800/80 hover:bg-red-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs shadow transition" title="写真を削除">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                <div class="sm:col-span-1">
+                                    <div class="relative">
+                                        <input type="number" id="daily-calories" placeholder="自動計算 / 数値入力" class="w-full text-sm bg-white border border-slate-300 rounded-xl pl-3 pr-10 py-2 focus:outline-none focus:border-teal-500">
+                                        <span class="absolute right-3 top-2 text-xs text-slate-400">kcal</span>
+                                    </div>
+                                </div>
+                                <div class="sm:col-span-2">
+                                    <input type="text" id="daily-meal-memo" placeholder="例: 朝：トースト、昼：焼き魚定食、夜：サラダと鶏むね肉" class="w-full text-sm bg-white border border-slate-300 rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Exercise -->
+                        <div class="space-y-2">
+                            <label class="block text-xs font-bold text-slate-700"><i class="fa-solid fa-person-running text-emerald-500 mr-1"></i> 運動記録（ウォーキング・ランニング等）</label>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                <select id="daily-exercise-type" class="text-sm border border-slate-300 rounded-xl px-3 py-2 bg-white focus:outline-none focus:border-teal-500">
+                                    <option value="なし">運動なし</option>
+                                    <option value="ウォーキング">ウォーキング</option>
+                                    <option value="ランニング">ランニング</option>
+                                    <option value="筋トレ・ストレッチ">筋トレ・ストレッチ</option>
+                                    <option value="サイクリング・水泳">サイクリング・水泳</option>
+                                    <option value="その他">その他</option>
+                                </select>
+                                <div class="relative">
+                                    <input type="number" id="daily-exercise-mins" placeholder="時間 (分)" class="w-full text-sm border border-slate-300 rounded-xl pl-3 pr-8 py-2 focus:outline-none focus:border-teal-500">
+                                    <span class="absolute right-3 top-2 text-xs text-slate-400">分</span>
+                                </div>
+                                <input type="text" id="daily-exercise-memo" placeholder="メモ (例: 5,000歩)" class="text-sm border border-slate-300 rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500">
+                            </div>
+                        </div>
+
+                        <button type="submit" class="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold text-sm py-3 rounded-xl shadow-sm transition">
+                            <i class="fa-solid fa-check mr-1"></i> 今日の記録を保存する
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Right: Recent Logs History (5 cols) -->
+                <div class="lg:col-span-5 bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                    <h3 class="font-bold text-slate-800 text-base mb-3 flex items-center justify-between">
+                        <span>最近のライフログ履歴</span>
+                        <span class="text-xs font-normal text-slate-500">AI相談に自動連携されます</span>
+                    </h3>
+                    <div id="daily-logs-list" class="space-y-3 overflow-y-auto max-h-[520px] pr-1">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- ==========================================
+             TAB 5: AI HEALTH CONSULTANT (AI健康相談)
+             ========================================== -->
+        <section id="view-ai-chat" class="tab-view hidden fade-in">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[calc(100vh-190px)] min-h-[500px]">
+                <!-- Chat Header -->
+                <div class="bg-slate-50 px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-teal-600 text-white flex items-center justify-center shadow-sm">
+                            <i class="fa-solid fa-robot text-lg"></i>
+                        </div>
+                        <div>
+                            <h2 class="font-bold text-slate-800 text-sm sm:text-base">AIパーソナル健康アドバイザー</h2>
+                            <p class="text-[11px] text-slate-500">あなたの健康診断結果・日々の体調・食事・運動記録を踏まえてアドバイスします</p>
+                        </div>
+                    </div>
+                    <button onclick="clearChatHistory()" class="text-xs text-slate-500 hover:text-red-600 px-2.5 py-1.5 rounded-lg hover:bg-slate-200/50 transition" title="会話履歴をリセット">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </div>
+
+                <!-- Quick Prompt Suggestions -->
+                <div class="bg-teal-50/50 px-4 py-2 border-b border-slate-100 flex gap-2 overflow-x-auto no-scrollbar">
+                    <button onclick="sendQuickPrompt('最新の健康診断で注意すべき項目と、その改善方法を教えてください。')" class="text-xs bg-white hover:bg-teal-50 text-teal-700 border border-teal-200 px-3 py-1.5 rounded-full whitespace-nowrap transition shadow-2xs">
+                        🩺 要注意項目の改善策は？
+                    </button>
+                    <button onclick="sendQuickPrompt('最近の睡眠・食事・運動の記録を見て、生活習慣のアドバイスをください。')" class="text-xs bg-white hover:bg-teal-50 text-teal-700 border border-teal-200 px-3 py-1.5 rounded-full whitespace-nowrap transition shadow-2xs">
+                        🥗 最近の生活習慣を評価して
+                    </button>
+                    <button onclick="sendQuickPrompt('コレステロールや中性脂肪を下げるためのおすすめの食事メニューを提案して。')" class="text-xs bg-white hover:bg-teal-50 text-teal-700 border border-teal-200 px-3 py-1.5 rounded-full whitespace-nowrap transition shadow-2xs">
+                        🍽️ 数値改善の食事メニュー
+                    </button>
+                </div>
+
+                <!-- Messages Container -->
+                <div id="chat-messages" class="flex-1 p-5 overflow-y-auto space-y-4 bg-slate-50/30">
+                    <!-- Populated dynamically -->
+                </div>
+
+                <!-- Chat Input Form -->
+                <div class="p-4 bg-white border-t border-slate-200">
+                    <form onsubmit="handleChatSubmit(event)" class="flex gap-2">
+                        <input type="text" id="chat-input" placeholder="体調の悩み、検査数値の意味、食事や運動の相談を入力..." class="flex-1 text-sm bg-slate-100 border border-transparent focus:bg-white focus:border-teal-500 rounded-xl px-4 py-3 focus:outline-none transition">
+                        <button type="submit" id="chat-send-btn" class="bg-teal-600 hover:bg-teal-700 text-white px-5 py-3 rounded-xl font-medium text-sm shadow-sm transition flex items-center gap-2">
+                            <span>送信</span>
+                            <i class="fa-solid fa-paper-plane text-xs"></i>
+                        </button>
+                    </form>
+                    <p class="text-[10px] text-slate-400 mt-1.5 text-center">※AIの回答は一般的な健康情報の提供を目的としており、医師の診断に代わるものではありません。</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Modal: Add New User Profile -->
+    <div id="add-user-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4 fade-in">
+            <div class="flex items-center justify-between">
+                <h3 class="font-bold text-lg text-slate-800">新規個人の登録</h3>
+                <button onclick="closeAddUserModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <p class="text-xs text-slate-500">ご家族など、個人ごとに健康診断データや日々の記録を分けて管理できます。</p>
+            <form onsubmit="createNewUser(event)" class="space-y-3">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">お名前</label>
+                    <input type="text" id="new-user-name" required placeholder="例: 佐藤 花子" class="w-full text-sm border border-slate-300 rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">年齢</label>
+                        <input type="number" id="new-user-age" required min="0" max="120" value="35" class="w-full text-sm border border-slate-300 rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">性別</label>
+                        <select id="new-user-gender" class="w-full text-sm border border-slate-300 rounded-xl px-3 py-2 bg-white focus:outline-none focus:border-teal-500">
+                            <option value="男性">男性</option>
+                            <option value="女性">女性</option>
+                            <option value="その他">その他</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 pt-3">
+                    <button type="button" onclick="closeAddUserModal()" class="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-xl">キャンセル</button>
+                    <button type="submit" class="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-5 py-2 rounded-xl shadow-sm">登録する</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- JavaScript Application Logic -->
+    <script>
+        // Set PDF.js worker
+        if (window.pdfjsLib) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+
+        // ==========================================
+        // 1. STATE & MOCK INITIAL DATA
+        // ==========================================
+        const STORAGE_KEY = 'healthpulse_app_data_v1';
+
+        const defaultData = {
+            currentUserId: 'user_1',
+            users: [
+                {
+                    id: 'user_1',
+                    name: '山田 太郎',
+                    age: 42,
+                    gender: '男性',
+                    checkups: [
+                        {
+                            date: '2024-10-15',
+                            overallGrade: 'C',
+                            items: [
+                                { id: 'bmi', name: 'BMI', value: 24.2, unit: 'kg/m²', min: 18.5, max: 24.9, grade: 'A' },
+                                { id: 'bp_sys', name: '収縮期血圧(最高)', value: 128, unit: 'mmHg', min: 90, max: 129, grade: 'A' },
+                                { id: 'ldl', name: 'LDLコレステロール', value: 138, unit: 'mg/dL', min: 60, max: 119, grade: 'C' },
+                                { id: 'tg', name: '中性脂肪', value: 145, unit: 'mg/dL', min: 30, max: 149, grade: 'B' },
+                                { id: 'hba1c', name: 'HbA1c', value: 5.5, unit: '%', min: 4.6, max: 5.5, grade: 'B' },
+                                { id: 'ast', name: 'AST (GOT)', value: 26, unit: 'U/L', min: 10, max: 30, grade: 'A' },
+                                { id: 'alt', name: 'ALT (GPT)', value: 32, unit: 'U/L', min: 6, max: 30, grade: 'C' }
+                            ]
+                        },
+                        {
+                            date: '2025-10-20',
+                            overallGrade: 'D',
+                            items: [
+                                { id: 'bmi', name: 'BMI', value: 25.4, unit: 'kg/m²', min: 18.5, max: 24.9, grade: 'C' },
+                                { id: 'bp_sys', name: '収縮期血圧(最高)', value: 136, unit: 'mmHg', min: 90, max: 129, grade: 'C' },
+                                { id: 'ldl', name: 'LDLコレステロール', value: 164, unit: 'mg/dL', min: 60, max: 119, grade: 'D' },
+                                { id: 'tg', name: '中性脂肪', value: 182, unit: 'mg/dL', min: 30, max: 149, grade: 'C' },
+                                { id: 'hba1c', name: 'HbA1c', value: 5.8, unit: '%', min: 4.6, max: 5.5, grade: 'C' },
+                                { id: 'ast', name: 'AST (GOT)', value: 35, unit: 'U/L', min: 10, max: 30, grade: 'C' },
+                                { id: 'alt', name: 'ALT (GPT)', value: 48, unit: 'U/L', min: 6, max: 30, grade: 'D' }
+                            ]
+                        }
+                    ],
+                    appointments: [
+                        {
+                            id: 'appt_1',
+                            title: 'LDLコレステロール・肝機能 再検査（内科）',
+                            date: getFutureDateString(3), // 3 days from today for immediate reminder demo
+                            memo: '朝食抜きで午前9:30に受付へ。健康診断結果票を持参。'
+                        }
+                    ],
+                    dailyLogs: [
+                        {
+                            id: 'log_1',
+                            date: getPastDateString(1),
+                            physical: 4,
+                            mental: 4,
+                            sleep: 7.5,
+                            calories: 1950,
+                            mealMemo: '朝：納豆ご飯・味噌汁、昼：サバの塩焼き定食、夜：野菜鍋',
+                            exerciseType: 'ウォーキング',
+                            exerciseMins: 35,
+                            exerciseMemo: '通勤で一駅分歩いた (約4,500歩)'
+                        },
+                        {
+                            id: 'log_2',
+                            date: getTodayString(),
+                            physical: 3,
+                            mental: 4,
+                            sleep: 6.5,
+                            calories: 1800,
+                            mealMemo: '朝：ヨーグルトとバナナ、昼：鶏胸肉のサラダボウル',
+                            exerciseType: 'ランニング',
+                            exerciseMins: 25,
+                            exerciseMemo: '夜に軽くジョギング 3.5km'
+                        }
+                    ],
+                    chatHistory: [
+                        {
+                            role: 'ai',
+                            text: 'こんにちは！パーソナル健康アドバイザーです。\n最新の健康診断結果（LDLコレステロール: 164 mg/dL [D判定]、ALT: 48 U/L [D判定]）や、日々の睡眠・食事・運動の記録を把握しています。気になることや生活習慣の改善について、何でもお気軽にご相談ください！'
+                        }
+                    ]
+                }
+            ]
+        };
+
+        let appState = loadAppState();
+        let trendChartInstance = null;
+        let currentCalendarDate = new Date();
+        let extractedTempItems = [];
+        let currentMealPhotoDataUrl = null;
+
+        // Helper date functions
+        function getTodayString() {
+            const d = new Date();
+            return d.toISOString().split('T')[0];
+        }
+        function getFutureDateString(days) {
+            const d = new Date();
+            d.setDate(d.getDate() + days);
+            return d.toISOString().split('T')[0];
+        }
+        function getPastDateString(days) {
+            const d = new Date();
+            d.setDate(d.getDate() - days);
+            return d.toISOString().split('T')[0];
+        }
+
+        function loadAppState() {
+            try {
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (saved) return JSON.parse(saved);
+            } catch (e) {
+                console.error("Failed to load state", e);
+            }
+            return JSON.parse(JSON.stringify(defaultData));
+        }
+
+        function saveAppState() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+            } catch (e) {
+                console.error("Failed to save state", e);
+            }
+        }
+
+        function getCurrentUser() {
+            return appState.users.find(u => u.id === appState.currentUserId) || appState.users[0];
+        }
+
+        // ==========================================
+        // 2. NAVIGATION, TOAST & USER MANAGEMENT
+        // ==========================================
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const toast = document.createElement('div');
+            const bgClass = type === 'error' ? 'bg-red-600' : type === 'warning' ? 'bg-amber-600' : 'bg-teal-600';
+            const iconClass = type === 'error' ? 'fa-circle-xmark' : type === 'warning' ? 'fa-triangle-exclamation' : 'fa-circle-check';
+            toast.className = `${bgClass} text-white px-4 py-3 rounded-xl shadow-lg text-sm font-medium flex items-center gap-2.5 pointer-events-auto fade-in`;
+            toast.innerHTML = `<i class="fa-solid ${iconClass}"></i><span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-view').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.nav-tab').forEach(el => {
+                el.classList.remove('border-teal-600', 'text-teal-600');
+                el.classList.add('border-transparent', 'text-slate-500');
+            });
+
+            const targetView = document.getElementById(`view-${tabId}`);
+            const targetTab = document.getElementById(`tab-${tabId}`);
+            if (targetView) targetView.classList.remove('hidden');
+            if (targetTab) {
+                targetTab.classList.remove('border-transparent', 'text-slate-500');
+                targetTab.classList.add('border-teal-600', 'text-teal-600');
+            }
+
+            if (tabId === 'dashboard') renderDashboard();
+            if (tabId === 'calendar') renderCalendarAndAppointments();
+            if (tabId === 'daily') renderDailyLogs();
+            if (tabId === 'ai-chat') renderChatHistory();
+        }
+
+        function renderUserSelector() {
+            const select = document.getElementById('user-select');
+            if (!select) return;
+            select.innerHTML = appState.users.map(u => `
+                <option value="${u.id}" ${u.id === appState.currentUserId ? 'selected' : ''}>
+                    ${u.name} (${u.age}歳)
+                </option>
+            `).join('');
+        }
+
+        function switchUser(userId) {
+            appState.currentUserId = userId;
+            saveAppState();
+            renderAll();
+            const user = getCurrentUser();
+            showToast(`${user.name} さんのデータに切り替えました`);
+        }
+
+        function openAddUserModal() {
+            document.getElementById('add-user-modal').classList.remove('hidden');
+        }
+
+        function closeAddUserModal() {
+            document.getElementById('add-user-modal').classList.add('hidden');
+        }
+
+        function createNewUser(e) {
+            e.preventDefault();
+            const name = document.getElementById('new-user-name').value.trim();
+            const age = parseInt(document.getElementById('new-user-age').value, 10);
+            const gender = document.getElementById('new-user-gender').value;
+            if (!name) return;
+
+            const newId = 'user_' + Date.now();
+            appState.users.push({
+                id: newId,
+                name,
+                age,
+                gender,
+                checkups: [],
+                appointments: [],
+                dailyLogs: [],
+                chatHistory: [
+                    {
+                        role: 'ai',
+                        text: `${name}さん、はじめまして！パーソナル健康アドバイザーです。健康診断結果のPDF登録や日々の体調・食事・運動の記録をもとに、健康管理をサポートします。`
+                    }
+                ]
+            });
+            appState.currentUserId = newId;
+            saveAppState();
+            closeAddUserModal();
+            document.getElementById('new-user-name').value = '';
+            renderUserSelector();
+            renderAll();
+            showToast(`${name} さんのプロフィールを登録しました`);
+        }
+
+        // ==========================================
+        // 3. DASHBOARD & VISUALIZATION
+        // ==========================================
+        function getGradeDescription(grade) {
+            const map = {
+                'A': '異常なし（基準範囲内です）',
+                'B': '軽度異常（日常生活に支障はありません）',
+                'C': '要経過観察（生活習慣の改善を心がけましょう）',
+                'D': '要再検査・精密検査（早めの受診をおすすめします）',
+                'E': '要治療（速やかに医療機関を受診してください）'
+            };
+            return map[grade] || '判定データなし';
+        }
+
+        function renderDashboard() {
+            const user = getCurrentUser();
+            const sortedCheckups = [...user.checkups].sort((a, b) => new Date(a.date) - new Date(b.date));
+            const latest = sortedCheckups[sortedCheckups.length - 1];
+            const previous = sortedCheckups.length > 1 ? sortedCheckups[sortedCheckups.length - 2] : null;
+
+            const gradeEl = document.getElementById('dash-overall-grade');
+            const dateEl = document.getElementById('dash-latest-date');
+            const descEl = document.getElementById('dash-overall-desc');
+            const iconEl = document.getElementById('dash-grade-icon');
+            const alertCountEl = document.getElementById('dash-alert-count');
+            const alertNamesEl = document.getElementById('dash-alert-names');
+            const alertSection = document.getElementById('alert-highlight-section');
+            const alertCardsEl = document.getElementById('alert-items-cards');
+            const tbody = document.getElementById('results-table-body');
+
+            if (!latest) {
+                gradeEl.textContent = '-';
+                dateEl.textContent = '受診日: 未登録';
+                descEl.textContent = '「PDF読込・登録」タブから結果を登録してください';
+                iconEl.className = 'w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center text-2xl font-bold text-slate-400';
+                iconEl.textContent = '-';
+                alertCountEl.textContent = '0';
+                alertNamesEl.textContent = '該当項目なし';
+                alertSection.classList.add('hidden');
+                tbody.innerHTML = `<tr><td colspan="6" class="py-10 text-center text-slate-400 text-sm">健康診断データが登録されていません。「PDF読込・登録」から追加してください。</td></tr>`;
+                populateTrendSelect([]);
+                renderTrendChart();
+                return;
+            }
+
+            // Overall grade summary
+            const g = latest.overallGrade || 'A';
+            gradeEl.textContent = `${g} 判定`;
+            dateEl.textContent = `受診日: ${latest.date}`;
+            descEl.textContent = getGradeDescription(g);
+            iconEl.className = `w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-bold grade-badge-${g}`;
+            iconEl.textContent = g;
+
+            // Alert D/E items
+            const alertItems = latest.items.filter(item => item.grade === 'D' || item.grade === 'E');
+            alertCountEl.textContent = alertItems.length;
+            if (alertItems.length > 0) {
+                alertNamesEl.textContent = alertItems.map(i => i.name).join('、');
+                alertSection.classList.remove('hidden');
+                alertCardsEl.innerHTML = alertItems.map(item => `
+                    <div class="bg-white p-3.5 rounded-xl border border-red-200 shadow-2xs flex items-center justify-between">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="px-2 py-0.5 text-xs font-bold rounded-md grade-badge-${item.grade}">${item.grade}判定</span>
+                                <span class="font-bold text-sm text-slate-800">${item.name}</span>
+                            </div>
+                            <p class="text-xs text-slate-500 mt-1">現在値: <strong class="text-red-600 text-sm">${item.value}</strong> ${item.unit} (基準: ${item.min}〜${item.max})</p>
+                        </div>
+                        <button onclick="quickScheduleAlert('${item.name}')" class="text-xs bg-red-50 hover:bg-red-100 text-red-700 font-semibold px-2.5 py-1.5 rounded-lg transition">
+                            予約へ
+                        </button>
+                    </div>
+                `).join('');
+            } else {
+                alertNamesEl.textContent = '要再検査・精密検査の項目はありません';
+                alertSection.classList.add('hidden');
+            }
+
+            // Filter table rows
+            const filterVal = document.getElementById('filter-grade').value;
+            const filteredItems = latest.items.filter(item => {
+                if (filterVal === 'ALERT') return item.grade === 'D' || item.grade === 'E';
+                if (filterVal === 'CAUTION') return ['C', 'D', 'E'].includes(item.grade);
+                return true;
+            });
+
+            if (filteredItems.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-slate-400 text-sm">選択されたフィルターに該当する項目はありません。</td></tr>`;
+            } else {
+                tbody.innerHTML = filteredItems.map(item => {
+                    const isAlert = item.grade === 'D' || item.grade === 'E';
+                    const rowClass = isAlert ? 'bg-red-50/40 hover:bg-red-50/70' : 'hover:bg-slate-50/80';
+
+                    // Gauge math: scale range from min*0.5 to max*1.5
+                    const span = Math.max(item.max - item.min, 1);
+                    const scaleMin = Math.max(0, item.min - span * 0.6);
+                    const scaleMax = item.max + span * 0.6;
+                    const totalRange = scaleMax - scaleMin;
+
+                    const normalLeftPct = Math.max(0, Math.min(100, ((item.min - scaleMin) / totalRange) * 100));
+                    const normalWidthPct = Math.max(5, Math.min(100 - normalLeftPct, ((item.max - item.min) / totalRange) * 100));
+                    const valPct = Math.max(2, Math.min(98, ((item.value - scaleMin) / totalRange) * 100));
+                    const dotColor = isAlert ? 'bg-red-600 ring-red-200' : item.grade === 'C' ? 'bg-amber-500 ring-amber-200' : 'bg-teal-600 ring-teal-200';
+
+                    // Diff from previous checkup
+                    let diffHtml = '<span class="text-slate-400 text-xs">-</span>';
+                    if (previous) {
+                        const prevItem = previous.items.find(p => p.id === item.id || p.name === item.name);
+                        if (prevItem) {
+                            const diff = +(item.value - prevItem.value).toFixed(2);
+                            if (diff > 0) diffHtml = `<span class="text-xs font-medium text-amber-600">+${diff}</span>`;
+                            else if (diff < 0) diffHtml = `<span class="text-xs font-medium text-teal-600">${diff}</span>`;
+                            else diffHtml = `<span class="text-xs text-slate-400">±0</span>`;
+                        }
+                    }
+
+                    return `
+                        <tr class="${rowClass} transition">
+                            <td class="py-3.5 px-4 font-semibold text-slate-800">${item.name}</td>
+                            <td class="py-3.5 px-4 text-center">
+                                <span class="inline-block w-7 h-7 leading-7 rounded-lg text-xs font-bold grade-badge-${item.grade}">${item.grade}</span>
+                            </td>
+                            <td class="py-3.5 px-4 font-bold ${isAlert ? 'text-red-600' : 'text-slate-800'}">
+                                ${item.value} <span class="text-xs font-normal text-slate-500">${item.unit}</span>
+                            </td>
+                            <td class="py-3.5 px-4 text-xs text-slate-600 font-medium">
+                                ${item.min} 〜 ${item.max} ${item.unit}
+                            </td>
+                            <td class="py-3.5 px-4 hidden md:table-cell">
+                                <div class="relative h-3 bg-slate-200 rounded-full overflow-visible">
+                                    <!-- Normal Borderline Zone -->
+                                    <div class="absolute top-0 bottom-0 bg-emerald-200/90 rounded-sm" style="left: ${normalLeftPct}%; width: ${normalWidthPct}%;" title="基準範囲"></div>
+                                    <!-- Current Value Marker -->
+                                    <div class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full ${dotColor} ring-4 shadow-xs" style="left: ${valPct}%;" title="現在値: ${item.value}"></div>
+                                </div>
+                            </td>
+                            <td class="py-3.5 px-4 text-right">${diffHtml}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            populateTrendSelect(latest.items);
+            renderTrendChart();
+        }
+
+        function quickScheduleAlert(itemName) {
+            switchTab('calendar');
+            const titleInput = document.getElementById('appt-title');
+            const dateInput = document.getElementById('appt-date');
+            if (titleInput) titleInput.value = `${itemName} 再検査・精密検査`;
+            if (dateInput && !dateInput.value) dateInput.value = getFutureDateString(7);
+        }
+
+        function populateTrendSelect(items) {
+            const select = document.getElementById('trend-item-select');
+            if (!select) return;
+            const currentVal = select.value;
+            if (!items || items.length === 0) {
+                select.innerHTML = `<option value="">データなし</option>`;
+                return;
+            }
+            select.innerHTML = items.map(i => `<option value="${i.name}">${i.name} (${i.unit})</option>`).join('');
+            if (items.some(i => i.name === currentVal)) {
+                select.value = currentVal;
+            }
+        }
+
+        function renderTrendChart() {
+            const ctx = document.getElementById('trendChart');
+            if (!ctx) return;
+
+            if (trendChartInstance) {
+                trendChartInstance.destroy();
+                trendChartInstance = null;
+            }
+
+            const user = getCurrentUser();
+            const sortedCheckups = [...user.checkups].sort((a, b) => new Date(a.date) - new Date(b.date));
+            const selectedName = document.getElementById('trend-item-select')?.value;
+
+            if (!selectedName || sortedCheckups.length === 0) return;
+
+            const labels = [];
+            const values = [];
+            const maxLines = [];
+            const minLines = [];
+
+            sortedCheckups.forEach(c => {
+                const found = c.items.find(i => i.name === selectedName);
+                if (found) {
+                    labels.push(c.date);
+                    values.push(found.value);
+                    maxLines.push(found.max);
+                    minLines.push(found.min);
+                }
+            });
+
+            trendChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: `${selectedName} 測定値`,
+                            data: values,
+                            borderColor: '#0d9488',
+                            backgroundColor: 'rgba(13, 148, 136, 0.12)',
+                            borderWidth: 3,
+                            pointRadius: 5,
+                            pointBackgroundColor: '#0d9488',
+                            tension: 0.25,
+                            fill: true
+                        },
+                        {
+                            label: '基準上限 (ボーダーライン)',
+                            data: maxLines,
+                            borderColor: '#ef4444',
+                            borderDash: [6, 6],
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            fill: false
+                        },
+                        {
+                            label: '基準下限',
+                            data: minLines,
+                            borderColor: '#94a3b8',
+                            borderDash: [4, 4],
+                            borderWidth: 1.5,
+                            pointRadius: 0,
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top', labels: { usePointStyle: true, boxWidth: 8 } }
+                    },
+                    scales: {
+                        y: { beginAtZero: false, grid: { color: '#f1f5f9' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        // ==========================================
+        // 4. PDF UPLOAD & PARSING
+        // ==========================================
+        async function handlePdfUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const loadingEl = document.getElementById('pdf-loading');
+            const previewEl = document.getElementById('pdf-preview-form');
+            loadingEl.classList.remove('hidden');
+            previewEl.classList.add('hidden');
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                let fullText = '';
+                for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                    const page = await pdf.getPage(pageNum);
+                    const textContent = await page.getTextContent();
+                    fullText += textContent.items.map(item => item.str).join(' ') + '\n';
+                }
+
+                await parseCheckupTextWithGemini(fullText);
+            } catch (err) {
+                console.error("PDF parse error:", err);
+                showToast("PDFの解析に失敗しました。サンプルデータ読込をお試しください。", "error");
+            } finally {
+                loadingEl.classList.add('hidden');
+                event.target.value = '';
+            }
+        }
+
+        async function parseCheckupTextWithGemini(rawText) {
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+            const prompt = `以下の健康診断結果のテキストから検査項目・数値・単位・基準値（下限・上限）・A〜E判定を抽出してください。受診日も特定できればYYYY-MM-DD形式で抽出してください。\n\nテキスト:\n${rawText.slice(0, 6000)}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            examDate: { type: "STRING" },
+                            items: {
+                                type: "ARRAY",
+                                items: {
+                                    type: "OBJECT",
+                                    properties: {
+                                        name: { type: "STRING" },
+                                        value: { type: "NUMBER" },
+                                        unit: { type: "STRING" },
+                                        min: { type: "NUMBER" },
+                                        max: { type: "NUMBER" },
+                                        grade: { type: "STRING" }
+                                    },
+                                    required: ["name", "value", "unit", "min", "max", "grade"]
+                                }
+                            }
+                        },
+                        required: ["items"]
+                    }
+                }
+            };
+
+            try {
+                const response = await fetchWithBackoff(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                const jsonStr = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (jsonStr) {
+                    const parsed = JSON.parse(jsonStr);
+                    if (parsed.items && parsed.items.length > 0) {
+                        showExtractedPreview(parsed.examDate || getTodayString(), parsed.items);
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn("Gemini PDF parse fallback:", e);
+            }
+
+            // Fallback sample if PDF was scanned image without embedded text
+            showToast("PDFから文字を抽出できなかったため、標準テンプレートを表示します", "warning");
+            simulateSamplePdfLoad();
+        }
+
+        function simulateSamplePdfLoad() {
+            const sampleItems = [
+                { id: 'bmi', name: 'BMI', value: 24.8, unit: 'kg/m²', min: 18.5, max: 24.9, grade: 'B' },
+                { id: 'bp_sys', name: '収縮期血圧(最高)', value: 132, unit: 'mmHg', min: 90, max: 129, grade: 'C' },
+                { id: 'ldl', name: 'LDLコレステロール', value: 152, unit: 'mg/dL', min: 60, max: 119, grade: 'D' },
+                { id: 'tg', name: '中性脂肪', value: 140, unit: 'mg/dL', min: 30, max: 149, grade: 'A' },
+                { id: 'hba1c', name: 'HbA1c', value: 5.7, unit: '%', min: 4.6, max: 5.5, grade: 'C' },
+                { id: 'ast', name: 'AST (GOT)', value: 29, unit: 'U/L', min: 10, max: 30, grade: 'A' },
+                { id: 'alt', name: 'ALT (GPT)', value: 38, unit: 'U/L', min: 6, max: 30, grade: 'C' }
+            ];
+            showExtractedPreview(getTodayString(), sampleItems);
+            showToast("サンプル診断データを読み込みました");
+        }
+
+        function showExtractedPreview(dateStr, items) {
+            extractedTempItems = items.map((item, idx) => ({
+                id: item.id || `item_${idx}`,
+                name: item.name,
+                value: item.value,
+                unit: item.unit || '',
+                min: item.min ?? 0,
+                max: item.max ?? 100,
+                grade: ['A', 'B', 'C', 'D', 'E'].includes(item.grade) ? item.grade : 'A'
+            }));
+
+            document.getElementById('upload-exam-date').value = dateStr;
+            const tbody = document.getElementById('upload-preview-tbody');
+            tbody.innerHTML = extractedTempItems.map((item, idx) => `
+                <tr>
+                    <td class="p-2"><input type="text" value="${item.name}" onchange="extractedTempItems[${idx}].name = this.value" class="w-full border border-slate-200 rounded-lg px-2 py-1 text-xs font-medium"></td>
+                    <td class="p-2"><input type="number" step="any" value="${item.value}" onchange="extractedTempItems[${idx}].value = parseFloat(this.value)" class="w-24 border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold"></td>
+                    <td class="p-2"><input type="text" value="${item.unit}" onchange="extractedTempItems[${idx}].unit = this.value" class="w-20 border border-slate-200 rounded-lg px-2 py-1 text-xs"></td>
+                    <td class="p-2 flex items-center gap-1">
+                        <input type="number" step="any" value="${item.min}" onchange="extractedTempItems[${idx}].min = parseFloat(this.value)" class="w-16 border border-slate-200 rounded-lg px-2 py-1 text-xs">
+                        <span>〜</span>
+                        <input type="number" step="any" value="${item.max}" onchange="extractedTempItems[${idx}].max = parseFloat(this.value)" class="w-16 border border-slate-200 rounded-lg px-2 py-1 text-xs">
+                    </td>
+                    <td class="p-2">
+                        <select onchange="extractedTempItems[${idx}].grade = this.value" class="border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold bg-white">
+                            ${['A', 'B', 'C', 'D', 'E'].map(g => `<option value="${g}" ${item.grade === g ? 'selected' : ''}>${g}</option>`).join('')}
+                        </select>
+                    </td>
+                </tr>
+            `).join('');
+
+            document.getElementById('pdf-preview-form').classList.remove('hidden');
+        }
+
+        function cancelPdfPreview() {
+            extractedTempItems = [];
+            document.getElementById('pdf-preview-form').classList.add('hidden');
+        }
+
+        function saveExtractedRecord() {
+            const date = document.getElementById('upload-exam-date').value || getTodayString();
+            if (extractedTempItems.length === 0) return;
+
+            const gradeOrder = { 'A': 1, 'B': 2, 'C': 3, 'D': 4, 'E': 5 };
+            let worstGrade = 'A';
+            extractedTempItems.forEach(item => {
+                if ((gradeOrder[item.grade] || 1) > (gradeOrder[worstGrade] || 1)) {
+                    worstGrade = item.grade;
+                }
+            });
+
+            const user = getCurrentUser();
+            user.checkups = user.checkups.filter(c => c.date !== date);
+            user.checkups.push({
+                date,
+                overallGrade: worstGrade,
+                items: JSON.parse(JSON.stringify(extractedTempItems))
+            });
+
+            saveAppState();
+            cancelPdfPreview();
+            showToast(`${date} の健康診断結果を登録しました！`);
+            switchTab('dashboard');
+        }
+
+        // ==========================================
+        // 5. CALENDAR & REMINDERS
+        // ==========================================
+        function addAppointment(e) {
+            e.preventDefault();
+            const title = document.getElementById('appt-title').value.trim();
+            const date = document.getElementById('appt-date').value;
+            const memo = document.getElementById('appt-memo').value.trim();
+            if (!title || !date) return;
+
+            const user = getCurrentUser();
+            user.appointments.push({
+                id: 'appt_' + Date.now(),
+                title,
+                date,
+                memo
+            });
+
+            saveAppState();
+            document.getElementById('appt-title').value = '';
+            document.getElementById('appt-memo').value = '';
+            renderCalendarAndAppointments();
+            checkUpcomingReminders();
+            showToast("受診予定をカレンダーに登録しました");
+        }
+
+        function deleteAppointment(apptId) {
+            const user = getCurrentUser();
+            user.appointments = user.appointments.filter(a => a.id !== apptId);
+            saveAppState();
+            renderCalendarAndAppointments();
+            checkUpcomingReminders();
+            showToast("受診予定を削除しました");
+        }
+
+        function changeMonth(delta) {
+            currentCalendarDate.setMonth(currentCalendarDate.getMonth() + delta);
+            renderCalendarAndAppointments();
+        }
+
+        function resetToToday() {
+            currentCalendarDate = new Date();
+            renderCalendarAndAppointments();
+        }
+
+        function renderCalendarAndAppointments() {
+            const user = getCurrentUser();
+            const year = currentCalendarDate.getFullYear();
+            const month = currentCalendarDate.getMonth();
+
+            const monthTitle = document.getElementById('calendar-month-year');
+            if (monthTitle) monthTitle.textContent = `${year}年 ${month + 1}月`;
+
+            const grid = document.getElementById('calendar-grid');
+            if (grid) {
+                const firstDay = new Date(year, month, 1).getDay();
+                const daysInMonth = new Date(year, month + 1, 0).getDate();
+                const todayStr = getTodayString();
+
+                let cellsHtml = '';
+                for (let i = 0; i < firstDay; i++) {
+                    cellsHtml += `<div class="h-16 sm:h-20 bg-slate-50/50 rounded-xl"></div>`;
+                }
+
+                for (let d = 1; d <= daysInMonth; d++) {
+                    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                    const isToday = dateStr === todayStr;
+                    const dayAppts = user.appointments.filter(a => a.date === dateStr);
+
+                    cellsHtml += `
+                        <div onclick="document.getElementById('appt-date').value='${dateStr}'" class="h-16 sm:h-20 p-1.5 rounded-xl border ${isToday ? 'border-teal-500 bg-teal-50/40' : 'border-slate-100 hover:border-slate-300 bg-white'} cursor-pointer transition flex flex-col justify-between overflow-hidden">
+                            <span class="text-xs font-semibold ${isToday ? 'text-teal-700' : 'text-slate-600'}">${d}</span>
+                            <div class="space-y-0.5 overflow-y-auto">
+                                ${dayAppts.map(a => `
+                                    <div class="text-[10px] leading-tight bg-amber-100 text-amber-900 font-medium px-1.5 py-0.5 rounded truncate" title="${a.title}">
+                                        ${a.title}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+                grid.innerHTML = cellsHtml;
+            }
+
+            // Render appointment list
+            const listEl = document.getElementById('appointment-list');
+            if (listEl) {
+                const sorted = [...user.appointments].sort((a, b) => new Date(a.date) - new Date(b.date));
+                if (sorted.length === 0) {
+                    listEl.innerHTML = `<p class="text-sm text-slate-400 text-center py-6">登録されている受診予定はありません。</p>`;
+                } else {
+                    const today = new Date(getTodayString());
+                    listEl.innerHTML = sorted.map(appt => {
+                        const target = new Date(appt.date);
+                        const diffDays = Math.ceil((target - today) / (1000 * 60 * 60 * 24));
+                        let badgeHtml = '';
+                        if (diffDays === 0) badgeHtml = `<span class="text-[11px] font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">本日受診日</span>`;
+                        else if (diffDays > 0 && diffDays <= 7) badgeHtml = `<span class="text-[11px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">あと${diffDays}日</span>`;
+                        else if (diffDays < 0) badgeHtml = `<span class="text-[11px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">終了</span>`;
+
+                        return `
+                            <div class="p-3.5 rounded-xl border border-slate-200 flex items-start justify-between gap-3 bg-slate-50/40">
+                                <div class="space-y-1">
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <span class="text-xs font-bold text-teal-700 bg-teal-50 px-2.5 py-0.5 rounded-lg border border-teal-200">${appt.date}</span>
+                                        ${badgeHtml}
+                                        <span class="font-bold text-sm text-slate-800">${appt.title}</span>
+                                    </div>
+                                    ${appt.memo ? `<p class="text-xs text-slate-600 pl-1">${appt.memo}</p>` : ''}
+                                </div>
+                                <button onclick="deleteAppointment('${appt.id}')" class="text-slate-400 hover:text-red-500 p-1.5 transition" title="削除">
+                                    <i class="fa-solid fa-trash-can text-xs"></i>
+                                </button>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            }
+        }
+
+        function checkUpcomingReminders() {
+            const user = getCurrentUser();
+            const today = new Date(getTodayString());
+            const upcoming = [...user.appointments]
+                .map(a => ({ ...a, diffDays: Math.ceil((new Date(a.date) - today) / (1000 * 60 * 60 * 24)) }))
+                .filter(a => a.diffDays >= 0)
+                .sort((a, b) => a.diffDays - b.diffDays);
+
+            const banner = document.getElementById('upcoming-banner');
+            const bannerText = document.getElementById('upcoming-banner-text');
+            const badge = document.getElementById('reminder-badge');
+            const dashDate = document.getElementById('dash-next-appt-date');
+            const dashTitle = document.getElementById('dash-next-appt-title');
+
+            if (upcoming.length > 0) {
+                const next = upcoming[0];
+                if (dashDate) dashDate.textContent = next.date;
+                if (dashTitle) dashTitle.textContent = next.title;
+
+                if (next.diffDays <= 7) {
+                    const dayLabel = next.diffDays === 0 ? '【本日】' : `【あと${next.diffDays}日】`;
+                    if (bannerText) bannerText.textContent = `${dayLabel} 受診リマインド: ${next.date}「${next.title}」の予定があります。`;
+                    if (banner) banner.classList.remove('hidden');
+                    if (badge) badge.classList.remove('hidden');
+                } else {
+                    if (banner) banner.classList.add('hidden');
+                    if (badge) badge.classList.add('hidden');
+                }
+            } else {
+                if (dashDate) dashDate.textContent = '予定なし';
+                if (dashTitle) dashTitle.textContent = 'カレンダーから予約登録できます';
+                if (banner) banner.classList.add('hidden');
+                if (badge) badge.classList.add('hidden');
+            }
+        }
+
+        // ==========================================
+        // 7. DAILY HEALTH LOGS & MEAL PHOTO AI ANALYSIS
+        // ==========================================
+        function compressImageToDataUrl(file, maxWidth = 640, quality = 0.75) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    const img = new Image();
+                    img.onload = function() {
+                        const canvas = document.createElement('canvas');
+                        let width = img.width;
+                        let height = img.height;
+                        if (width > maxWidth) {
+                            height = Math.round((height * maxWidth) / width);
+                            width = maxWidth;
+                        }
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        resolve(canvas.toDataURL('image/jpeg', quality));
+                    };
+                    img.onerror = reject;
+                    img.src = event.target.result;
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        async function handleMealPhotoUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const analyzingEl = document.getElementById('meal-photo-analyzing');
+            const previewBox = document.getElementById('meal-photo-preview-box');
+            const previewImg = document.getElementById('meal-photo-preview');
+
+            analyzingEl.classList.remove('hidden');
+
+            try {
+                // Compress image so it fits cleanly in localStorage and sends fast to API
+                const compressedDataUrl = await compressImageToDataUrl(file, 640, 0.75);
+                currentMealPhotoDataUrl = compressedDataUrl;
+
+                previewImg.src = compressedDataUrl;
+                previewBox.classList.remove('hidden');
+
+                const base64Data = compressedDataUrl.split(',')[1];
+                await analyzeMealImageWithGemini(base64Data);
+            } catch (err) {
+                console.error("Meal photo processing error:", err);
+                showToast("写真の読み込みに失敗しました", "error");
+            } finally {
+                analyzingEl.classList.add('hidden');
+                event.target.value = '';
+            }
+        }
+
+        function removeMealPhoto() {
+            currentMealPhotoDataUrl = null;
+            document.getElementById('meal-photo-preview').src = '';
+            document.getElementById('meal-photo-preview-box').classList.add('hidden');
+        }
+
+        async function analyzeMealImageWithGemini(base64ImageData) {
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+            const prompt = "この食事の写真を分析し、写っている料理名・内容の簡潔な説明と、おおよその合計カロリー（kcal）を推定してください。食べ物以外が写っている場合はカロリーを0としてください。";
+
+            const payload = {
+                contents: [
+                    {
+                        role: "user",
+                        parts: [
+                            { text: prompt },
+                            {
+                                inlineData: {
+                                    mimeType: "image/jpeg",
+                                    data: base64ImageData
+                                }
+                            }
+                        ]
+                    }
+                ],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            estimatedCalories: { type: "INTEGER", description: "推定合計カロリー(kcal)" },
+                            mealDescription: { type: "STRING", description: "料理名と内容の簡潔な説明（例: 鮭の塩焼き定食、ご飯、味噌汁）" }
+                        },
+                        required: ["estimatedCalories", "mealDescription"]
+                    }
+                }
+            };
+
+            try {
+                const response = await fetchWithBackoff(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                const jsonStr = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (jsonStr) {
+                    const parsed = JSON.parse(jsonStr);
+                    const calInput = document.getElementById('daily-calories');
+                    const memoInput = document.getElementById('daily-meal-memo');
+
+                    if (parsed.estimatedCalories > 0) {
+                        calInput.value = parsed.estimatedCalories;
+                    }
+                    if (parsed.mealDescription) {
+                        memoInput.value = memoInput.value.trim()
+                            ? `${memoInput.value.trim()} / ${parsed.mealDescription}`
+                            : parsed.mealDescription;
+                    }
+                    showToast(`写真から約 ${parsed.estimatedCalories} kcal と自動計算しました！`);
+                }
+            } catch (e) {
+                console.warn("Gemini image calorie analysis failed:", e);
+                showToast("カロリーの自動推定に失敗しました。手動で数値を入力してください。", "warning");
+            }
+        }
+
+        function selectRating(type, val) {
+            document.getElementById(`daily-${type}`).value = val;
+            const group = document.getElementById(`${type}-rating-group`);
+            group.querySelectorAll('.rating-btn').forEach(btn => {
+                if (parseInt(btn.dataset.val, 10) === val) {
+                    btn.classList.remove('bg-white', 'border-slate-200');
+                    btn.classList.add('bg-teal-100', 'border-teal-500', 'ring-1', 'ring-teal-500');
+                } else {
+                    btn.classList.add('bg-white', 'border-slate-200');
+                    btn.classList.remove('bg-teal-100', 'border-teal-500', 'ring-1', 'ring-teal-500');
+                }
+            });
+        }
+
+        function saveDailyLog(e) {
+            e.preventDefault();
+            const date = document.getElementById('daily-date').value;
+            const physical = parseInt(document.getElementById('daily-physical').value, 10);
+            const mental = parseInt(document.getElementById('daily-mental').value, 10);
+            const sleep = parseFloat(document.getElementById('daily-sleep').value);
+            const calories = document.getElementById('daily-calories').value ? parseInt(document.getElementById('daily-calories').value, 10) : null;
+            const mealMemo = document.getElementById('daily-meal-memo').value.trim();
+            const exerciseType = document.getElementById('daily-exercise-type').value;
+            const exerciseMins = document.getElementById('daily-exercise-mins').value ? parseInt(document.getElementById('daily-exercise-mins').value, 10) : 0;
+            const exerciseMemo = document.getElementById('daily-exercise-memo').value.trim();
+
+            const user = getCurrentUser();
+            // Overwrite if same date exists
+            user.dailyLogs = user.dailyLogs.filter(l => l.date !== date);
+            user.dailyLogs.push({
+                id: 'log_' + Date.now(),
+                date,
+                physical,
+                mental,
+                sleep,
+                calories,
+                mealMemo,
+                mealPhoto: currentMealPhotoDataUrl,
+                exerciseType,
+                exerciseMins,
+                exerciseMemo
+            });
+
+            saveAppState();
+            removeMealPhoto();
+            renderDailyLogs();
+            showToast(`${date} の健康記録を保存しました`);
+        }
+
+        function renderDailyLogs() {
+            const user = getCurrentUser();
+            const listEl = document.getElementById('daily-logs-list');
+            const sorted = [...user.dailyLogs].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            const physEmojis = ['', '😫', '😕', '😐', '🙂', '😄'];
+            const mentEmojis = ['', '⛈️', '🌧️', '☁️', '⛅', '☀️'];
+
+            if (sorted.length === 0) {
+                listEl.innerHTML = `<p class="text-sm text-slate-400 text-center py-8">まだ日々の記録がありません。左のフォームから記録してみましょう。</p>`;
+                return;
+            }
+
+            listEl.innerHTML = sorted.map(log => `
+                <div class="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
+                    <div class="flex items-center justify-between border-b border-slate-200/70 pb-1.5">
+                        <span class="font-bold text-xs text-slate-700">${log.date}</span>
+                        <div class="flex items-center gap-3 text-xs">
+                            <span title="身体の調子">身体: ${physEmojis[log.physical]}</span>
+                            <span title="精神の状態">精神: ${mentEmojis[log.mental]}</span>
+                            <span class="text-indigo-600 font-semibold"><i class="fa-solid fa-bed"></i> ${log.sleep}h</span>
+                        </div>
+                    <div class="text-xs text-slate-600 space-y-1.5">
+                        <p><i class="fa-solid fa-utensils text-orange-400 w-4"></i> ${log.calories ? `<strong>${log.calories} kcal</strong> ` : ''}${log.mealMemo || '食事メモなし'}</p>
+                        ${log.mealPhoto ? `<div class="pl-4"><img src="${log.mealPhoto}" alt="食事記録写真" class="h-24 w-auto object-cover rounded-lg border border-slate-200 shadow-2xs"></div>` : ''}
+                        <p><i class="fa-solid fa-person-running text-emerald-500 w-4"></i> ${log.exerciseType} ${log.exerciseMins ? `(${log.exerciseMins}分)` : ''} ${log.exerciseMemo}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // ==========================================
+        // 8. AI HEALTH CONSULTANT CHAT (Gemini API)
+        // ==========================================
+        function renderChatHistory() {
+            const user = getCurrentUser();
+            const container = document.getElementById('chat-messages');
+
+            container.innerHTML = user.chatHistory.map(msg => {
+                const isUser = msg.role === 'user';
+                const formattedText = msg.text.replace(/\n/g, '<br>');
+                if (isUser) {
+                    return `
+                        <div class="flex justify-end">
+                            <div class="bg-teal-600 text-white rounded-2xl rounded-tr-sm px-4 py-3 max-w-[85%] sm:max-w-[70%] text-sm shadow-xs leading-relaxed">
+                                ${formattedText}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    return `
+                        <div class="flex items-start gap-2.5">
+                            <div class="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center shrink-0 mt-0.5 text-xs">
+                                <i class="fa-solid fa-robot"></i>
+                            </div>
+                            <div class="bg-white border border-slate-200 text-slate-700 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[85%] sm:max-w-[75%] text-sm shadow-2xs leading-relaxed">
+                                ${formattedText}
+                            </div>
+                        </div>
+                    `;
+                }
+            }).join('');
+
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function sendQuickPrompt(text) {
+            document.getElementById('chat-input').value = text;
+            handleChatSubmit(new Event('submit'));
+        }
+
+        function clearChatHistory() {
+            const user = getCurrentUser();
+            user.chatHistory = [
+                {
+                    role: 'ai',
+                    text: '会話履歴をリセットしました。現在の健康診断データやライフログをもとに、引き続きご相談にお答えします！'
+                }
+            ];
+            saveAppState();
+            renderChatHistory();
+        }
+
+        async function handleChatSubmit(e) {
+            e.preventDefault();
+            const inputEl = document.getElementById('chat-input');
+            const sendBtn = document.getElementById('chat-send-btn');
+            const text = inputEl.value.trim();
+            if (!text) return;
+
+            const user = getCurrentUser();
+            user.chatHistory.push({ role: 'user', text });
+            inputEl.value = '';
+            renderChatHistory();
+
+            // Disable input while generating
+            inputEl.disabled = true;
+            sendBtn.disabled = true;
+
+            // Add temporary typing indicator
+            const container = document.getElementById('chat-messages');
+            const typingId = 'typing-' + Date.now();
+            container.insertAdjacentHTML('beforeend', `
+                <div id="${typingId}" class="flex items-start gap-2.5">
+                    <div class="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center shrink-0 text-xs">
+                        <i class="fa-solid fa-robot"></i>
+                    </div>
+                    <div class="bg-white border border-slate-200 text-slate-500 rounded-2xl rounded-tl-sm px-4 py-3 text-sm">
+                        <i class="fa-solid fa-circle-notch fa-spin mr-1"></i> あなたの健康データを分析して回答を作成中...
+                    </div>
+                </div>
+            `);
+            container.scrollTop = container.scrollHeight;
+
+            try {
+                const reply = await generateAiHealthAdvice(user, text);
+                document.getElementById(typingId)?.remove();
+                user.chatHistory.push({ role: 'ai', text: reply });
+                saveAppState();
+                renderChatHistory();
+            } catch (err) {
+                document.getElementById(typingId)?.remove();
+                user.chatHistory.push({
+                    role: 'ai',
+                    text: '申し訳ありません、現在AIサーバーとの通信が混み合っています。少し時間をおいて再度お試しください。'
+                });
+                renderChatHistory();
+            } finally {
+                inputEl.disabled = false;
+                sendBtn.disabled = false;
+                inputEl.focus();
+            }
+        }
+
+        async function generateAiHealthAdvice(user, userMessage) {
+            const latestCheckup = [...user.checkups].sort((a, b) => new Date(a.date) - new Date(b.date)).pop();
+            const recentLogs = [...user.dailyLogs].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+
+            const contextSummary = `
+【相談者プロフィール】
+名前: ${user.name} (${user.age}歳・${user.gender})
+
+【最新の健康診断結果 (${latestCheckup ? latestCheckup.date : '未登録'})】
+${latestCheckup ? latestCheckup.items.map(i => `- ${i.name}: ${i.value}${i.unit} (基準値:${i.min}〜${i.max}, 判定:${i.grade})`).join('\n') : 'データなし'}
+
+【直近のライフログ（体調・睡眠・食事・運動）】
+${recentLogs.length > 0 ? recentLogs.map(l => `- ${l.date}: 身体調子${l.physical}/5, 精神${l.mental}/5, 睡眠${l.sleep}時間, 食事(${l.calories || '?'}kcal: ${l.mealMemo}), 運動(${l.exerciseType} ${l.exerciseMins}分)`).join('\n') : '記録なし'}
+`;
+
+            const systemPrompt = `あなたは親切で知識豊富なパーソナル健康アドバイザーです。
+以下のユーザーの「健康診断結果」と「日々のライフログ」を踏まえ、ユーザーの質問に具体的かつ分かりやすく、寄り添うトーンで回答してください。
+・D判定やE判定の項目がある場合は、無理のない生活改善案とともに医療機関での受診も優しく促してください。
+・マークダウン記号（**など）は控えめにし、箇条書きや改行を使ってスマホでも読みやすく整理してください。
+
+${contextSummary}`;
+
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userMessage }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] }
+            };
+
+            const response = await fetchWithBackoff(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!text) throw new Error("No response text");
+            return text;
+        }
+
+        // Exponential backoff fetch helper
+        async function fetchWithBackoff(url, options, retries = 3, delay = 1000) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const res = await fetch(url, options);
+                    if (res.ok) return res;
+                    if (res.status !== 429 && res.status < 500) return res;
+                } catch (err) {
+                    if (i === retries - 1) throw err;
+                }
+                await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
+            }
+            throw new Error("Max retries reached");
+        }
+
+        // ==========================================
+        // 9. INITIALIZATION
+        // ==========================================
+        function renderAll() {
+            renderDashboard();
+            renderCalendarAndAppointments();
+            renderDailyLogs();
+            renderChatHistory();
+            checkUpcomingReminders();
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const dailyDateInput = document.getElementById('daily-date');
+            if (dailyDateInput) dailyDateInput.value = getTodayString();
+            const apptDateInput = document.getElementById('appt-date');
+            if (apptDateInput) apptDateInput.value = getFutureDateString(7);
+
+            renderUserSelector();
+            renderAll();
+        });
+    </script>
+</body>
+</html>
